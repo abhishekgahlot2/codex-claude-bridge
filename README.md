@@ -16,13 +16,9 @@ Claude Code and Codex CLI are both great coding agents, but they can't talk to e
 
 Claude Code recently shipped [Channels](https://code.claude.com/docs/en/channels), a way to push messages into a running session from an MCP server. This project uses that as the push mechanism on Claude's side, and a blocking MCP tool call on Codex's side, to create a full duplex bridge between the two.
 
-```mermaid
-flowchart TB
-    Claude["Claude Code"] <-->|stdio / channel| Server["server.ts\n(channel + web UI)"]
-    Codex["Codex CLI"] <-->|stdio / MCP tools| Client["codex-mcp.ts\n(send_to_claude)"]
-    Server <-->|HTTP API\nlocalhost:8788| Client
-    Server <-->|WebSocket| Browser["Browser UI\nlocalhost:8788"]
-```
+<p align="center">
+  <img src="architecture.svg" alt="Codex Bridge architecture diagram" width="800"/>
+</p>
 
 When Codex calls `send_to_claude()`, the bridge holds the connection open until Claude replies. From Codex's perspective it's a tool call that takes a bit to return. From Claude's perspective it's a channel notification. The bridge sits in between, routing messages and showing them in a web UI.
 
