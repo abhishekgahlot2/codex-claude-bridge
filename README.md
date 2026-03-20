@@ -1,38 +1,34 @@
 # Codex Bridge
 
-A bidirectional bridge that lets Claude Code and OpenAI Codex CLI talk to each other in real time. Watch two AI agents debate, collaborate, and reach consensus from a web UI.
+### Make Claude Code and OpenAI Codex talk to each other.
+
+Built on [Claude Code Channels](https://code.claude.com/docs/en/channels) (just launched) — the first project to use channels for agent-to-agent communication instead of just chat UIs.
+
+Two AI coding agents. One bridge. Real-time conversation you can watch from your browser.
 
 ![Codex Bridge UI showing Claude and Codex discussing Redis vs Memcached](screenshot.png)
 
-Neither Claude Code nor Codex natively supports agent-to-agent communication. MCP is request-response only. A2A isn't supported by either tool. This bridge works around both limitations using Claude Code's channel system on one side and a blocking MCP tool on the other.
+## The problem
 
-## How it works
+Claude Code and Codex CLI are both great coding agents, but they can't talk to each other. MCP is request-response only — no back-and-forth. A2A (Google's agent protocol) isn't supported by either tool. There's no standard way to make two coding agents have an actual conversation.
 
-```
-┌─────────────┐                                     ┌─────────────┐
-│  Claude Code │                                     │  Codex CLI  │
-│  (channel)   │                                     │  (MCP tool) │
-└──────┬───────┘                                     └──────┬──────┘
-       │ stdio                                              │ stdio
-       │                                                    │
-┌──────▼────────────────────────────────────────────────────▼──────┐
-│                        Codex Bridge                              │
-│                                                                  │
-│  server.ts (Claude side)           codex-mcp.ts (Codex side)     │
-│  - Channel push notifications      - send_to_claude() blocks    │
-│  - reply / send_to_codex tools        until Claude responds      │
-│  - Web UI on localhost:8788        - check_claude_messages()     │
-│                         ↕ HTTP API ↕                             │
-└──────────────────────────────────────────────────────────────────┘
-                              ↕
-                     Browser (localhost:8788)
+## The solution
+
+Claude Code recently shipped [Channels](https://code.claude.com/docs/en/channels), a way to push messages into a running session from an MCP server. This project uses that as the push mechanism on Claude's side, and a blocking MCP tool call on Codex's side, to create a full duplex bridge between the two.
+
+```mermaid
+flowchart TB
+    Claude["Claude Code"] <-->|stdio / channel| Server["server.ts\n(channel + web UI)"]
+    Codex["Codex CLI"] <-->|stdio / MCP tools| Client["codex-mcp.ts\n(send_to_claude)"]
+    Server <-->|HTTP API\nlocalhost:8788| Client
+    Server <-->|WebSocket| Browser["Browser UI\nlocalhost:8788"]
 ```
 
-The trick: Claude Code has a "channels" feature that lets MCP servers push messages into a running session. Codex doesn't have anything like that. So we use a blocking tool call on the Codex side — when Codex calls `send_to_claude()`, the bridge holds the connection open until Claude replies. From Codex's perspective it's just a tool call that takes a bit to return. From Claude's perspective it's a channel notification it can react to.
+When Codex calls `send_to_claude()`, the bridge holds the connection open until Claude replies. From Codex's perspective it's a tool call that takes a bit to return. From Claude's perspective it's a channel notification. The bridge sits in between, routing messages and showing them in a web UI.
 
 ## What you need
 
-- [Bun](https://bun.sh) (`bun --version` to check, install from bun.sh if missing)
+- [Bun](https://bun.sh) (check with `bun --version`, install from bun.sh if missing)
 - [Claude Code](https://code.claude.com) v2.1.80+ with a claude.ai account
 - [Codex CLI](https://github.com/openai/codex) with an OpenAI API key or ChatGPT login
 
@@ -93,7 +89,7 @@ In a separate terminal:
 codex
 ```
 
-Codex will auto-load the `codex-bridge` MCP server from your config. You can verify by running `/mcp` inside Codex — you should see `codex-bridge` listed with `send_to_claude` and `check_claude_messages` tools.
+Codex will auto-load the `codex-bridge` MCP server from your config. Verify by running `/mcp` inside Codex — you should see `codex-bridge` listed with `send_to_claude` and `check_claude_messages` tools.
 
 ### 6. Open the web UI
 
@@ -101,33 +97,33 @@ Go to [http://localhost:8788](http://localhost:8788) in your browser. This is wh
 
 ## Usage
 
-The conversation flows best when started from Codex's side. Tell Codex something like:
+Start the conversation from Codex's side. Tell Codex something like:
 
 ```
 Use send_to_claude to discuss whether we should use Redis or Memcached for caching. Keep going until you agree.
 ```
 
-Codex will call `send_to_claude()`, which sends the message through the bridge to Claude. Claude gets a channel notification, processes it, and replies. The bridge routes Claude's response back to Codex as the tool result. Codex reads it and can call `send_to_claude()` again to continue the discussion.
+Codex calls `send_to_claude()`, the bridge pushes it to Claude via a channel notification, Claude processes it and replies, and the bridge returns Claude's reply to Codex. Codex can keep calling `send_to_claude()` to continue the discussion.
 
-You can also inject messages from the web UI as a human observer — type something and it goes straight to Claude's session.
+You can also type in the web UI as a human observer — your messages go straight to Claude's session.
 
-### Starting from Claude's side
-
-Claude has a `send_to_codex` tool, but since Codex can't receive push notifications, the message sits in a queue until Codex checks for it. You'd have to tell Codex to "call check_claude_messages" to pick it up. Works, but the Codex-initiated flow is smoother.
-
-### Watching the conversation
+### Web UI
 
 The web UI at localhost:8788 shows all messages in real time:
 - Purple bubbles on the left = Claude
 - Green bubbles on the right = Codex
-- Gray bubbles = you (human observer from the web UI)
+- Gray bubbles = you (human observer)
+
+### Starting from Claude's side
+
+Claude has a `send_to_codex` tool, but since Codex can't receive push notifications, the message sits in a queue until Codex polls for it. The Codex-initiated flow is smoother.
 
 ## Files
 
 | File | What it does |
 |------|------|
-| `server.ts` | Claude Code channel plugin. Runs as an MCP server over stdio, serves the web UI, and exposes HTTP API endpoints for the Codex side. |
-| `codex-mcp.ts` | Codex CLI MCP server. Exposes `send_to_claude()` and `check_claude_messages()` tools. Talks to `server.ts` over HTTP. |
+| `server.ts` | Claude Code channel plugin. MCP server over stdio, web UI, and HTTP API endpoints for the Codex side. |
+| `codex-mcp.ts` | Codex CLI MCP server. Exposes `send_to_claude()` and `check_claude_messages()`. Talks to `server.ts` over HTTP. |
 | `.mcp.json` | Plugin config for Claude Code's plugin system. |
 | `.claude-plugin/plugin.json` | Plugin metadata. |
 
@@ -136,22 +132,22 @@ The web UI at localhost:8788 shows all messages in real time:
 | Env var | Default | What it does |
 |---------|---------|------|
 | `CODEX_BRIDGE_PORT` | `8788` | Port for the web UI and internal API |
-| `CODEX_BRIDGE_URL` | `http://localhost:8788` | URL the Codex-side MCP server uses to reach the bridge (change if you moved the port) |
+| `CODEX_BRIDGE_URL` | `http://localhost:8788` | URL the Codex-side MCP server uses to reach the bridge |
+
+## Why not MCP or A2A?
+
+**MCP** is request-response only. One agent can call the other as a tool, but there's no push, no notifications, no way to have an actual back-and-forth conversation.
+
+**A2A** (Google's Agent-to-Agent protocol) would solve this properly, but neither Claude Code nor Codex supports it. The community bridges that exist wrap A2A in MCP anyway.
+
+**Claude Code Channels** are the only push mechanism either tool supports. This bridge uses channels on Claude's side and a blocking tool call on Codex's side to simulate full duplex communication. It's the simplest thing that actually works.
 
 ## Known limitations
 
-- Codex can't receive push notifications. The conversation works best when Codex initiates. Claude-initiated messages require Codex to poll.
-- Claude sometimes doesn't set `reply_to` on its responses. The bridge works around this by resolving the oldest pending request, but it can cause replies to land on the wrong message if multiple are in flight.
-- The bridge runs on localhost only. Both Claude Code and Codex CLI need to be on the same machine.
-- Channels are a Claude Code research preview feature. The `--dangerously-load-development-channels` flag is required until the plugin gets on the approved allowlist.
-
-## Why not just use MCP / A2A?
-
-Both Claude Code and Codex support MCP, but MCP is strictly request-response. There's no notification system, no way to push a message into a running session. One agent can call the other as a tool, but the other can't talk back until asked.
-
-A2A (Google's Agent-to-Agent protocol) would be the right solution, but neither Claude Code nor Codex supports it natively. The community bridges that exist just wrap A2A in MCP anyway, adding complexity without solving the fundamental problem.
-
-This bridge uses the only push mechanism available (Claude Code channels) and turns a blocking tool call into the equivalent of push on the Codex side. It's the simplest working solution given what these tools actually support today.
+- Codex can't receive push notifications — conversation flows best when Codex initiates.
+- Both agents need to be on the same machine (localhost bridge).
+- Channels are a Claude Code research preview feature — `--dangerously-load-development-channels` flag is required.
+- Claude sometimes skips `reply_to` — the bridge falls back to resolving the oldest pending request.
 
 ## License
 
