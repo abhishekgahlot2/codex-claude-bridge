@@ -11,7 +11,7 @@
  *   args = ["/path/to/codex-bridge/codex-mcp.ts"]
  *
  * Tools:
- *   send_to_claude(message) — Send a message to Claude. Blocks until Claude replies (up to 2 min).
+ *   send_to_claude(message) — Send a message to Claude. Blocks until Claude replies (up to about 2 min).
  *   check_claude_messages() — Check if Claude has sent any messages proactively.
  */
 
@@ -23,6 +23,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 
 const BRIDGE_URL = process.env.CODEX_BRIDGE_URL ?? 'http://localhost:8788'
+const POLL_TIMEOUT_MS = 110000
+const CLIENT_ABORT_MS = 115000
 
 const mcp = new Server(
   { name: 'codex-bridge-client', version: '0.2.0' },
@@ -37,7 +39,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
       name: 'send_to_claude',
       description: [
         'Send a message to Claude Code through the Codex Bridge and wait for a reply.',
-        'This tool blocks until Claude responds (up to 2 minutes).',
+        'This tool blocks until Claude responds (up to about 2 minutes).',
         'Use this to collaborate with Claude: ask questions, propose approaches,',
         'debate architecture decisions, or reach consensus on implementation details.',
         'Claude has access to its own codebase tools (file reading, editing, search, terminal).',
@@ -104,10 +106,10 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         // Step 2: Long-poll for Claude's reply
         // Use AbortController to prevent Bun from closing the socket prematurely
         const controller = new AbortController()
-        const clientTimeout = setTimeout(() => controller.abort(), 55000)
+        const clientTimeout = setTimeout(() => controller.abort(), CLIENT_ABORT_MS)
         let pollRes: Response
         try {
-          pollRes = await fetch(`${BRIDGE_URL}/api/poll-reply/${id}?timeout=50000`, {
+          pollRes = await fetch(`${BRIDGE_URL}/api/poll-reply/${id}?timeout=${POLL_TIMEOUT_MS}`, {
             signal: controller.signal,
           })
         } catch (e: unknown) {
@@ -115,7 +117,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           const msg = e instanceof Error ? e.message : String(e)
           if (msg.includes('abort') || msg.includes('socket')) {
             return {
-              content: [{ type: 'text', text: 'Claude is still thinking. The bridge timed out waiting for a reply. Try sending your message again.' }],
+              content: [{ type: 'text', text: 'Claude is still thinking. The bridge timed out waiting for a reply after about 2 minutes. Try again later.' }],
             }
           }
           throw e
@@ -135,7 +137,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           return {
             content: [{
               type: 'text',
-              text: 'Claude did not reply within 2 minutes. Claude may be busy or waiting for user approval. Try again later.',
+              text: 'Claude did not reply within about 2 minutes. Claude may be busy or waiting for user approval. Try again later.',
             }],
           }
         }

@@ -69,7 +69,7 @@ args = ["/full/path/to/codex-claude-bridge/codex-mcp.ts"]
 tool_timeout_sec = 120
 ```
 
-The `tool_timeout_sec = 120` is needed because `send_to_claude` blocks while waiting for Claude's reply. The default 60s timeout will kill the connection too early.
+The `tool_timeout_sec = 120` is needed because `send_to_claude` can wait for Claude's reply for about 2 minutes. The default 60s timeout will kill the connection too early.
 
 ### 4. Start Claude Code with the channel
 
@@ -148,7 +148,7 @@ Claude has a `send_to_codex` tool, but since Codex can't receive push notificati
 - Codex can't receive push notifications — conversation flows best when Codex initiates.
 - Both agents need to be on the same machine (localhost bridge).
 - Channels are a Claude Code research preview feature — `--dangerously-load-development-channels` flag is required.
-- Claude sometimes skips `reply_to` — the bridge falls back to resolving the oldest pending request.
+- Claude must include `reply_to` when replying to Codex. If it omits it, the reply still appears in the web UI but won't route back to Codex.
 
 ## License
 
