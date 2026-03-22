@@ -45,33 +45,33 @@ type Wire =
 // ── Pending reply queue: codex sends a message, waits for claude's reply ──
 
 type PendingReply = {
-  resolve: (text: string) => void
-  timer: ReturnType<typeof setTimeout>
+  reply?: string
+  waiter?: {
+    resolve: (text: string) => void
+    timer: ReturnType<typeof setTimeout>
+  }
 }
 
 const pendingReplies = new Map<string, PendingReply>()
 
-// When Claude replies, resolve the pending promise.
-// If replyToId matches a specific pending request, resolve that one.
-// Otherwise resolve the OLDEST pending request (Claude often doesn't set reply_to).
+// When Claude replies, route it only to the exact pending Codex request.
+// If Claude replies before Codex starts polling, buffer the text and return it
+// as soon as the poll request arrives.
 function resolveCodexReply(replyToId: string | undefined, text: string) {
-  let pending: PendingReply | undefined
+  if (!replyToId) return
 
-  if (replyToId) {
-    pending = pendingReplies.get(replyToId)
-    if (pending) pendingReplies.delete(replyToId)
+  const pending = pendingReplies.get(replyToId)
+  if (!pending) return
+
+  if (pending.waiter) {
+    clearTimeout(pending.waiter.timer)
+    pendingReplies.delete(replyToId)
+    pending.waiter.resolve(text)
+    return
   }
 
-  // Fallback: resolve the oldest pending request
-  if (!pending && pendingReplies.size > 0) {
-    const [oldestId] = pendingReplies.keys()
-    pending = pendingReplies.get(oldestId)
-    if (pending) pendingReplies.delete(oldestId)
-  }
-
-  if (pending) {
-    clearTimeout(pending.timer)
-    pending.resolve(text)
+  if (pending.reply === undefined) {
+    pending.reply = text
   }
 }
 
@@ -210,8 +210,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 await mcp.connect(new StdioServerTransport())
 
 // Push a message into Claude's session via channel notification
-function deliverToClaude(id: string, text: string, sender: string, file?: { path: string; name: string }): void {
-  void mcp.notification({
+async function deliverToClaude(id: string, text: string, sender: string, file?: { path: string; name: string }): Promise<void> {
+  await mcp.notification({
     method: 'notifications/claude/channel',
     params: {
       content: text || `(${file?.name ?? 'attachment'})`,
@@ -269,7 +269,7 @@ Bun.serve({
           writeFileSync(path, Buffer.from(await f.arrayBuffer()))
           file = { path, name: f.name }
         }
-        deliverToClaude(id, text, 'user', file)
+        await deliverToClaude(id, text, 'user', file)
         return new Response(null, { status: 204 })
       })()
     }
@@ -280,11 +280,22 @@ Bun.serve({
     if (url.pathname === '/api/from-codex' && req.method === 'POST') {
       return (async () => {
         const body = await req.json() as { message: string }
+        const message = body.message?.trim()
+        if (!message) return new Response('missing message', { status: 400 })
+
         const id = nextId('codex-')
-        // Show in web UI
-        broadcast({ type: 'msg', id, from: 'codex', text: body.message, ts: Date.now() })
-        // Push to Claude via channel
-        deliverToClaude(id, body.message, 'codex')
+        pendingReplies.set(id, {})
+
+        try {
+          // Push to Claude via channel
+          await deliverToClaude(id, message, 'codex')
+        } catch (err) {
+          pendingReplies.delete(id)
+          return new Response(`delivery failed: ${err instanceof Error ? err.message : err}`, { status: 502 })
+        }
+
+        // Show in web UI only after delivery succeeds
+        broadcast({ type: 'msg', id, from: 'codex', text: message, ts: Date.now() })
         return Response.json({ id })
       })()
     }
@@ -294,19 +305,38 @@ Bun.serve({
     if (url.pathname.startsWith('/api/poll-reply/') && req.method === 'GET') {
       const msgId = url.pathname.slice('/api/poll-reply/'.length)
       const timeout = Number(url.searchParams.get('timeout') ?? 120000)
+      const pending = pendingReplies.get(msgId)
+
+      if (!pending) {
+        return Response.json({ timeout: true, reply: null })
+      }
+
+      if (pending.reply !== undefined) {
+        const reply = pending.reply
+        pendingReplies.delete(msgId)
+        return Response.json({ timeout: false, reply })
+      }
+
+      if (pending.waiter) {
+        return new Response('already polling', { status: 409 })
+      }
 
       return new Promise<Response>(resolve => {
-        const timer = setTimeout(() => {
-          pendingReplies.delete(msgId)
-          resolve(Response.json({ timeout: true, reply: null }))
-        }, Math.min(timeout, 300000))
-
-        pendingReplies.set(msgId, {
+        const waiter = {
           resolve: (text: string) => {
+            pendingReplies.delete(msgId)
             resolve(Response.json({ timeout: false, reply: text }))
           },
-          timer,
-        })
+          timer: setTimeout(() => {
+            const current = pendingReplies.get(msgId)
+            if (current?.waiter === waiter) {
+              pendingReplies.delete(msgId)
+            }
+            resolve(Response.json({ timeout: true, reply: null }))
+          }, Math.min(timeout, 300000)),
+        }
+
+        pending.waiter = waiter
       })
     }
 
@@ -335,7 +365,11 @@ Bun.serve({
     message: (_, raw) => {
       try {
         const { id, text } = JSON.parse(String(raw)) as { id: string; text: string }
-        if (id && text?.trim()) deliverToClaude(id, text.trim(), 'user')
+        if (id && text?.trim()) {
+          void deliverToClaude(id, text.trim(), 'user').catch(err => {
+            process.stderr.write(`codex-bridge: websocket delivery failed: ${err instanceof Error ? err.message : err}\n`)
+          })
+        }
       } catch {}
     },
   },
