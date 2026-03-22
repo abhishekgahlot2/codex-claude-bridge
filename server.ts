@@ -44,15 +44,64 @@ type Wire =
 
 // ── Pending reply queue: codex sends a message, waits for claude's reply ──
 
+type ReplyWaiter = {
+  resolve: (response: Response) => void
+  timer: ReturnType<typeof setTimeout>
+  cleanup: () => void
+}
+
 type PendingReply = {
+  createdAt: number
+  normalizedMessage?: string
   reply?: string
-  waiter?: {
-    resolve: (text: string) => void
-    timer: ReturnType<typeof setTimeout>
-  }
+  waiters: Set<ReplyWaiter>
 }
 
 const pendingReplies = new Map<string, PendingReply>()
+const inFlightCodexMessages = new Map<string, string>()
+const MAX_PENDING_REPLY_MS = 10 * 60 * 1000
+
+function normalizeCodexMessage(message: string) {
+  return message.trim().replace(/\s+/g, ' ')
+}
+
+function clearInFlightMapping(pending: PendingReply, msgId: string) {
+  if (!pending.normalizedMessage) return
+  if (inFlightCodexMessages.get(pending.normalizedMessage) === msgId) {
+    inFlightCodexMessages.delete(pending.normalizedMessage)
+  }
+}
+
+function dropPendingReply(msgId: string) {
+  const pending = pendingReplies.get(msgId)
+  if (!pending) return
+
+  pendingReplies.delete(msgId)
+  clearInFlightMapping(pending, msgId)
+
+  for (const waiter of pending.waiters) {
+    waiter.cleanup()
+  }
+  pending.waiters.clear()
+}
+
+function removeWaiter(msgId: string, waiter: ReplyWaiter) {
+  const pending = pendingReplies.get(msgId)
+  if (!pending) {
+    waiter.cleanup()
+    return
+  }
+  if (!pending.waiters.delete(waiter)) return
+  waiter.cleanup()
+}
+
+function pruneExpiredPendingReplies() {
+  const now = Date.now()
+  for (const [msgId, pending] of pendingReplies) {
+    if (now - pending.createdAt <= MAX_PENDING_REPLY_MS) continue
+    dropPendingReply(msgId)
+  }
+}
 
 // When Claude replies, route it only to the exact pending Codex request.
 // If Claude replies before Codex starts polling, buffer the text and return it
@@ -63,15 +112,17 @@ function resolveCodexReply(replyToId: string | undefined, text: string) {
   const pending = pendingReplies.get(replyToId)
   if (!pending) return
 
-  if (pending.waiter) {
-    clearTimeout(pending.waiter.timer)
-    pendingReplies.delete(replyToId)
-    pending.waiter.resolve(text)
-    return
-  }
+  if (pending.reply !== undefined) return
 
-  if (pending.reply === undefined) {
-    pending.reply = text
+  pending.reply = text
+
+  if (pending.waiters.size > 0) {
+    const waiters = Array.from(pending.waiters)
+    dropPendingReply(replyToId)
+    for (const waiter of waiters) {
+      waiter.resolve(Response.json({ timeout: false, reply: text }))
+    }
+    return
   }
 }
 
@@ -279,18 +330,34 @@ Bun.serve({
     // Returns: { id: string } — the message ID to poll for reply
     if (url.pathname === '/api/from-codex' && req.method === 'POST') {
       return (async () => {
+        pruneExpiredPendingReplies()
         const body = await req.json() as { message: string }
         const message = body.message?.trim()
         if (!message) return new Response('missing message', { status: 400 })
+        const normalizedMessage = normalizeCodexMessage(message)
+        const existingId = inFlightCodexMessages.get(normalizedMessage)
+
+        if (existingId && pendingReplies.has(existingId)) {
+          return Response.json({ id: existingId })
+        }
+
+        if (existingId) {
+          inFlightCodexMessages.delete(normalizedMessage)
+        }
 
         const id = nextId('codex-')
-        pendingReplies.set(id, {})
+        pendingReplies.set(id, {
+          createdAt: Date.now(),
+          normalizedMessage,
+          waiters: new Set(),
+        })
+        inFlightCodexMessages.set(normalizedMessage, id)
 
         try {
           // Push to Claude via channel
           await deliverToClaude(id, message, 'codex')
         } catch (err) {
-          pendingReplies.delete(id)
+          dropPendingReply(id)
           return new Response(`delivery failed: ${err instanceof Error ? err.message : err}`, { status: 502 })
         }
 
@@ -303,6 +370,7 @@ Bun.serve({
     // ── API: Codex polls for Claude's reply (long-poll, up to 120s) ──
     // GET /api/poll-reply/:id
     if (url.pathname.startsWith('/api/poll-reply/') && req.method === 'GET') {
+      pruneExpiredPendingReplies()
       const msgId = url.pathname.slice('/api/poll-reply/'.length)
       const timeout = Number(url.searchParams.get('timeout') ?? 120000)
       const pending = pendingReplies.get(msgId)
@@ -313,30 +381,30 @@ Bun.serve({
 
       if (pending.reply !== undefined) {
         const reply = pending.reply
-        pendingReplies.delete(msgId)
+        dropPendingReply(msgId)
         return Response.json({ timeout: false, reply })
       }
 
-      if (pending.waiter) {
-        return new Response('already polling', { status: 409 })
-      }
-
       return new Promise<Response>(resolve => {
-        const waiter = {
-          resolve: (text: string) => {
-            pendingReplies.delete(msgId)
-            resolve(Response.json({ timeout: false, reply: text }))
-          },
+        let waiter: ReplyWaiter
+        const onAbort = () => {
+          removeWaiter(msgId, waiter)
+          resolve(Response.json({ timeout: true, reply: null }))
+        }
+        waiter = {
+          resolve,
           timer: setTimeout(() => {
-            const current = pendingReplies.get(msgId)
-            if (current?.waiter === waiter) {
-              pendingReplies.delete(msgId)
-            }
+            removeWaiter(msgId, waiter)
             resolve(Response.json({ timeout: true, reply: null }))
           }, Math.min(timeout, 300000)),
+          cleanup: () => {
+            clearTimeout(waiter.timer)
+            req.signal.removeEventListener('abort', onAbort)
+          },
         }
 
-        pending.waiter = waiter
+        req.signal.addEventListener('abort', onAbort, { once: true })
+        pending.waiters.add(waiter)
       })
     }
 

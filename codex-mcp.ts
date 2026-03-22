@@ -25,6 +25,13 @@ import {
 const BRIDGE_URL = process.env.CODEX_BRIDGE_URL ?? 'http://localhost:8788'
 const POLL_TIMEOUT_MS = 110000
 const CLIENT_ABORT_MS = 115000
+type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean }
+
+const inFlightMessages = new Map<string, Promise<ToolResult>>()
+
+function normalizeMessage(message: string) {
+  return message.trim().replace(/\s+/g, ' ')
+}
 
 const mcp = new Server(
   { name: 'codex-bridge-client', version: '0.2.0' },
@@ -48,6 +55,8 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         'a counter-proposal, or if consensus has not been reached, call this tool AGAIN',
         'to continue the discussion. Keep calling it until you and Claude have reached',
         'agreement or fully resolved the topic. Do not stop after a single exchange.',
+        'Do not call this tool concurrently with the same message.',
+        'If it times out or errors, do not immediately resend the exact same prompt.',
       ].join(' '),
       inputSchema: {
         type: 'object',
@@ -86,64 +95,82 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
           return { content: [{ type: 'text', text: 'error: empty message' }], isError: true }
         }
 
-        // Step 1: Send message to bridge
-        const sendRes = await fetch(`${BRIDGE_URL}/api/from-codex`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ message: message.trim() }),
-        })
-
-        if (!sendRes.ok) {
-          const err = await sendRes.text()
-          return {
-            content: [{ type: 'text', text: `error sending to bridge: ${sendRes.status} ${err}` }],
-            isError: true,
-          }
+        const normalizedMessage = normalizeMessage(message)
+        const existing = inFlightMessages.get(normalizedMessage)
+        if (existing) {
+          return await existing
         }
 
-        const { id } = await sendRes.json() as { id: string }
-
-        // Step 2: Long-poll for Claude's reply
-        // Use AbortController to prevent Bun from closing the socket prematurely
-        const controller = new AbortController()
-        const clientTimeout = setTimeout(() => controller.abort(), CLIENT_ABORT_MS)
-        let pollRes: Response
-        try {
-          pollRes = await fetch(`${BRIDGE_URL}/api/poll-reply/${id}?timeout=${POLL_TIMEOUT_MS}`, {
-            signal: controller.signal,
+        const requestPromise: Promise<ToolResult> = (async () => {
+          // Step 1: Send message to bridge
+          const sendRes = await fetch(`${BRIDGE_URL}/api/from-codex`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ message: message.trim() }),
           })
-        } catch (e: unknown) {
-          clearTimeout(clientTimeout)
-          const msg = e instanceof Error ? e.message : String(e)
-          if (msg.includes('abort') || msg.includes('socket')) {
+
+          if (!sendRes.ok) {
+            const err = await sendRes.text()
             return {
-              content: [{ type: 'text', text: 'Claude is still thinking. The bridge timed out waiting for a reply after about 2 minutes. Try again later.' }],
+              content: [{ type: 'text', text: `error sending to bridge: ${sendRes.status} ${err}` }],
+              isError: true,
             }
           }
-          throw e
-        }
-        clearTimeout(clientTimeout)
 
-        if (!pollRes.ok) {
-          return {
-            content: [{ type: 'text', text: `error polling reply: ${pollRes.status}` }],
-            isError: true,
+          const { id } = await sendRes.json() as { id: string }
+
+          // Step 2: Long-poll for Claude's reply
+          // Use AbortController to prevent Bun from closing the socket prematurely
+          const controller = new AbortController()
+          const clientTimeout = setTimeout(() => controller.abort(), CLIENT_ABORT_MS)
+          let pollRes: Response
+          try {
+            pollRes = await fetch(`${BRIDGE_URL}/api/poll-reply/${id}?timeout=${POLL_TIMEOUT_MS}`, {
+              signal: controller.signal,
+            })
+          } catch (e: unknown) {
+            clearTimeout(clientTimeout)
+            const msg = e instanceof Error ? e.message : String(e)
+            if (msg.includes('abort') || msg.includes('socket')) {
+              return {
+                content: [{ type: 'text', text: 'Claude may still be processing the same request. The bridge timed out waiting after about 2 minutes. Do not immediately resend the exact same prompt.' }],
+              }
+            }
+            throw e
           }
-        }
+          clearTimeout(clientTimeout)
 
-        const result = await pollRes.json() as { timeout: boolean; reply: string | null }
-
-        if (result.timeout || !result.reply) {
-          return {
-            content: [{
-              type: 'text',
-              text: 'Claude did not reply within about 2 minutes. Claude may be busy or waiting for user approval. Try again later.',
-            }],
+          if (!pollRes.ok) {
+            const errText = await pollRes.text()
+            return {
+              content: [{ type: 'text', text: `error polling reply: ${pollRes.status} ${errText}` }],
+              isError: true,
+            }
           }
-        }
 
-        return {
-          content: [{ type: 'text', text: result.reply }],
+          const result = await pollRes.json() as { timeout: boolean; reply: string | null }
+
+          if (result.timeout || !result.reply) {
+            return {
+              content: [{
+                type: 'text',
+                text: 'Claude did not reply within about 2 minutes. The same request may still be in flight. Do not immediately resend the exact same prompt.',
+              }],
+            }
+          }
+
+          return {
+            content: [{ type: 'text', text: result.reply }],
+          }
+        })()
+
+        inFlightMessages.set(normalizedMessage, requestPromise)
+        try {
+          return await requestPromise
+        } finally {
+          if (inFlightMessages.get(normalizedMessage) === requestPromise) {
+            inFlightMessages.delete(normalizedMessage)
+          }
         }
       }
 
