@@ -10,17 +10,19 @@ Two AI coding agents. One conversation. Real-time web UI to watch it happen.
 
 ## The problem
 
-Claude Code and Codex CLI are both great coding agents, but they can't talk to each other. MCP is request-response only — no back-and-forth. A2A (Google's agent protocol) isn't supported by either tool. There's no standard way to make two coding agents have an actual conversation.
+Claude Code and Codex CLI are both great coding agents, but they don't expose a native symmetric chat protocol between each other. Plain MCP is request-response, not push-to-both-live-sessions. A2A (Google's agent protocol) isn't supported natively by either tool. There's no off-the-shelf way to make the two agents hold a live conversation.
 
 ## The solution
 
-Claude Code recently shipped [Channels](https://code.claude.com/docs/en/channels), a way to push messages into a running session from an MCP server. This project uses that as the push mechanism on Claude's side, and a blocking MCP tool call on Codex's side, to create a full duplex bridge between the two.
+Claude Code recently shipped [Channels](https://code.claude.com/docs/en/channels), a way to push messages into a running session from an MCP server. This project uses that as the push mechanism on Claude's side, and a blocking MCP tool call on Codex's side, to create a practical bidirectional bridge between the two.
 
 <p align="center">
   <img src="architecture.svg" alt="Codex Bridge architecture diagram" width="800"/>
 </p>
 
 When Codex calls `send_to_claude()`, the bridge holds the connection open until Claude replies. From Codex's perspective it's a tool call that takes a bit to return. From Claude's perspective it's a channel notification. The bridge sits in between, routing messages and showing them in a web UI.
+
+In practice, Codex-initiated turns feel real-time and two-way. This is not symmetric push in both directions though: Claude can reply immediately to a pending Codex request, but Claude-initiated messages still wait until Codex polls or makes another request.
 
 ## What you need
 
@@ -101,6 +103,8 @@ Use send_to_claude to discuss whether we should use Redis or Memcached for cachi
 
 Codex calls `send_to_claude()`, the bridge pushes it to Claude via a channel notification, Claude processes it and replies, and the bridge returns Claude's reply to Codex. Codex can keep calling `send_to_claude()` to continue the discussion.
 
+This means the smooth path is Codex -> Claude -> Codex. It behaves like a live back-and-forth conversation, even though the overall bridge is still asymmetric under the hood.
+
 You can also type in the web UI as a human observer — your messages go straight to Claude's session.
 
 ### Web UI
@@ -112,7 +116,7 @@ The web UI at localhost:8788 shows all messages in real time:
 
 ### Starting from Claude's side
 
-Claude has a `send_to_codex` tool, but since Codex can't receive push notifications, the message sits in a queue until Codex polls for it. The Codex-initiated flow is smoother.
+Claude has a `send_to_codex` tool, but since Codex can't receive push notifications, the message sits in a queue until Codex polls for it. That's why the Codex-initiated flow is the smoother and more real-time path.
 
 ## Files
 
@@ -132,14 +136,15 @@ Claude has a `send_to_codex` tool, but since Codex can't receive push notificati
 
 ## Why not MCP or A2A?
 
-**MCP** is request-response only. One agent can call the other as a tool, but there's no push, no notifications, no way to have an actual back-and-forth conversation.
+**MCP** works as part of the transport here, but by itself it's request-response. One agent can call the other as a tool, but neither side gets a native symmetric push channel into the other's live session.
 
-**A2A** (Google's Agent-to-Agent protocol) would solve this properly, but neither Claude Code nor Codex supports it. The community bridges that exist wrap A2A in MCP anyway.
+**A2A** (Google's Agent-to-Agent protocol) would be a cleaner fit in theory, but neither Claude Code nor Codex exposes native A2A or ACP integration today. Community bridges usually end up wrapping those protocols in MCP anyway.
 
-**Claude Code Channels** are the only push mechanism either tool supports. This bridge uses channels on Claude's side and a blocking tool call on Codex's side to simulate full duplex communication. It's the simplest thing that actually works.
+**Claude Code Channels** are the only push mechanism either tool exposes today for this setup. This bridge uses channels on Claude's side and a blocking tool call on Codex's side, so Codex-initiated conversations feel live and bidirectional even though Claude -> Codex still falls back to queue + poll.
 
 ## Known limitations
 
+- Not symmetric full duplex: Codex-initiated turns are real-time, but Claude-initiated messages wait for Codex to poll or make another request.
 - Codex can't receive push notifications — conversation flows best when Codex initiates.
 - Both agents need to be on the same machine (localhost bridge).
 - Channels are a Claude Code research preview feature — `--dangerously-load-development-channels` flag is required.
