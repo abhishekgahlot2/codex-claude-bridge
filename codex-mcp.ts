@@ -33,6 +33,11 @@ function normalizeMessage(message: string) {
   return message.trim().replace(/\s+/g, ' ')
 }
 
+function formatElapsedMs(startMs: number) {
+  const seconds = Math.round((Date.now() - startMs) / 1000)
+  return `${seconds}s`
+}
+
 const mcp = new Server(
   { name: 'codex-bridge-client', version: '0.2.0' },
   {
@@ -102,6 +107,8 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
         }
 
         const requestPromise: Promise<ToolResult> = (async () => {
+          const startedAt = Date.now()
+
           // Step 1: Send message to bridge
           const sendRes = await fetch(`${BRIDGE_URL}/api/from-codex`, {
             method: 'POST',
@@ -133,7 +140,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             const msg = e instanceof Error ? e.message : String(e)
             if (msg.includes('abort') || msg.includes('socket')) {
               return {
-                content: [{ type: 'text', text: 'Claude may still be processing the same request. The bridge timed out waiting after about 2 minutes. Do not immediately resend the exact same prompt.' }],
+                content: [{ type: 'text', text: `Claude may still be processing the same request. The bridge timed out waiting after ${formatElapsedMs(startedAt)}. Do not immediately resend the exact same prompt.` }],
               }
             }
             throw e
@@ -154,7 +161,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
             return {
               content: [{
                 type: 'text',
-                text: 'Claude did not reply within about 2 minutes. The same request may still be in flight. Do not immediately resend the exact same prompt.',
+                text: `Claude did not reply within ${formatElapsedMs(startedAt)}. The same request may still be in flight. Do not immediately resend the exact same prompt.`,
               }],
             }
           }
