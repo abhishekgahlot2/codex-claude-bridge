@@ -6,7 +6,7 @@ Uses [Claude Code Channels](https://code.claude.com/docs/en/channels) for push n
 
 Two AI coding agents. One conversation. Real-time web UI to watch it happen.
 
-![Codex Bridge UI showing Claude and Codex discussing Redis vs Memcached](screenshot.png)
+![Codex Bridge UI showing a live multi-turn exchange between Codex and Claude](screenshot.png)
 
 ## The problem
 
@@ -98,7 +98,7 @@ Go to [http://localhost:8788](http://localhost:8788) in your browser. This is wh
 Start the conversation from Codex's side. Tell Codex something like:
 
 ```
-Use send_to_claude to discuss whether we should use Redis or Memcached for caching. Keep going until you agree.
+Use Claude bridge to discuss whether we should use Redis or Memcached for caching. Keep going until you agree.
 ```
 
 Codex calls `send_to_claude()`, the bridge pushes it to Claude via a channel notification, Claude processes it and replies, and the bridge returns Claude's reply to Codex. Codex can keep calling `send_to_claude()` to continue the discussion.

@@ -23,8 +23,9 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 
 const BRIDGE_URL = process.env.CODEX_BRIDGE_URL ?? 'http://localhost:8788'
-const POLL_TIMEOUT_MS = 110000
-const CLIENT_ABORT_MS = 115000
+const TOTAL_WAIT_MS = 110000
+const POLL_SLICE_MS = 15000
+const POLL_ABORT_GRACE_MS = 3000
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean }
 
 const inFlightMessages = new Map<string, Promise<ToolResult>>()
@@ -126,48 +127,60 @@ mcp.setRequestHandler(CallToolRequestSchema, async req => {
 
           const { id } = await sendRes.json() as { id: string }
 
-          // Step 2: Long-poll for Claude's reply
-          // Use AbortController to prevent Bun from closing the socket prematurely
-          const controller = new AbortController()
-          const clientTimeout = setTimeout(() => controller.abort(), CLIENT_ABORT_MS)
-          let pollRes: Response
-          try {
-            pollRes = await fetch(`${BRIDGE_URL}/api/poll-reply/${id}?timeout=${POLL_TIMEOUT_MS}`, {
-              signal: controller.signal,
-            })
-          } catch (e: unknown) {
+          // Step 2: Poll in short slices so hidden 20-60s transport limits
+          // do not kill the overall wait budget.
+          while (Date.now() - startedAt < TOTAL_WAIT_MS) {
+            const remainingMs = TOTAL_WAIT_MS - (Date.now() - startedAt)
+            const pollTimeoutMs = Math.min(POLL_SLICE_MS, remainingMs)
+            const controller = new AbortController()
+            const clientTimeout = setTimeout(() => controller.abort(), pollTimeoutMs + POLL_ABORT_GRACE_MS)
+            let pollRes: Response
+
+            try {
+              pollRes = await fetch(`${BRIDGE_URL}/api/poll-reply/${id}?timeout=${pollTimeoutMs}`, {
+                signal: controller.signal,
+              })
+            } catch (e: unknown) {
+              clearTimeout(clientTimeout)
+              const msg = e instanceof Error ? e.message : String(e)
+              if (msg.includes('abort') || msg.includes('socket')) {
+                continue
+              }
+              throw e
+            }
             clearTimeout(clientTimeout)
-            const msg = e instanceof Error ? e.message : String(e)
-            if (msg.includes('abort') || msg.includes('socket')) {
+
+            if (!pollRes.ok) {
+              const errText = await pollRes.text()
               return {
-                content: [{ type: 'text', text: `Claude may still be processing the same request. The bridge timed out waiting after ${formatElapsedMs(startedAt)}. Do not immediately resend the exact same prompt.` }],
+                content: [{ type: 'text', text: `error polling reply: ${pollRes.status} ${errText}` }],
+                isError: true,
               }
             }
-            throw e
-          }
-          clearTimeout(clientTimeout)
 
-          if (!pollRes.ok) {
-            const errText = await pollRes.text()
-            return {
-              content: [{ type: 'text', text: `error polling reply: ${pollRes.status} ${errText}` }],
-              isError: true,
+            const result = await pollRes.json() as { timeout: boolean; reply: string | null }
+
+            if (result.reply) {
+              return {
+                content: [{ type: 'text', text: result.reply }],
+              }
             }
-          }
 
-          const result = await pollRes.json() as { timeout: boolean; reply: string | null }
-
-          if (result.timeout || !result.reply) {
-            return {
-              content: [{
-                type: 'text',
-                text: `Claude did not reply within ${formatElapsedMs(startedAt)}. The same request may still be in flight. Do not immediately resend the exact same prompt.`,
-              }],
+            if (!result.timeout) {
+              return {
+                content: [{
+                  type: 'text',
+                  text: `Claude returned no reply after ${formatElapsedMs(startedAt)}. The same request may still be in flight. Do not immediately resend the exact same prompt.`,
+                }],
+              }
             }
           }
 
           return {
-            content: [{ type: 'text', text: result.reply }],
+            content: [{
+              type: 'text',
+              text: `Claude did not reply within ${formatElapsedMs(startedAt)}. The same request may still be in flight. Do not immediately resend the exact same prompt.`,
+            }],
           }
         })()
 
