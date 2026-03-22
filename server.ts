@@ -103,6 +103,16 @@ function pruneExpiredPendingReplies() {
   }
 }
 
+function drainLateRepliesForCodex() {
+  const lateReplies: { id: string; text: string }[] = []
+  for (const [msgId, pending] of pendingReplies) {
+    if (pending.reply === undefined) continue
+    lateReplies.push({ id: msgId, text: pending.reply })
+    dropPendingReply(msgId)
+  }
+  return lateReplies
+}
+
 // When Claude replies, route it only to the exact pending Codex request.
 // If Claude replies before Codex starts polling, buffer the text and return it
 // as soon as the poll request arrives.
@@ -411,7 +421,11 @@ Bun.serve({
     // ── API: Codex checks for Claude-initiated messages ──
     // GET /api/pending-for-codex
     if (url.pathname === '/api/pending-for-codex' && req.method === 'GET') {
-      const messages = pendingForCodex.splice(0)
+      pruneExpiredPendingReplies()
+      const messages = [
+        ...pendingForCodex.splice(0),
+        ...drainLateRepliesForCodex(),
+      ]
       return Response.json({ messages })
     }
 
