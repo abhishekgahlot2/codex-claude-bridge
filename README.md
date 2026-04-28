@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/abhishekgahlot2-codex-claude-bridge-badge.png)](https://mseep.ai/app/abhishekgahlot2-codex-claude-bridge)
+
 # Codex Bridge
 
 ### Make Claude Code and OpenAI Codex talk to each other.
