@@ -288,7 +288,12 @@ async function deliverToClaude(id: string, text: string, sender: string, file?: 
 }
 
 // ── HTTP server: web UI + API for codex-mcp.ts ──
+// Wrapped in try/catch: when multiple bridge instances spawn concurrently
+// (one per claude session), only the first can bind PORT. Subsequent
+// instances skip the HTTP layer and serve stdio MCP only, sharing the
+// singleton's STATE_DIR for inbox/outbox.
 
+try {
 Bun.serve({
   port: PORT,
   hostname: '127.0.0.1',
@@ -456,8 +461,14 @@ Bun.serve({
     },
   },
 })
-
 process.stderr.write(`codex-bridge: http://localhost:${PORT}\n`)
+} catch (e: any) {
+  if (e?.code === 'EADDRINUSE') {
+    process.stderr.write(`codex-bridge: port ${PORT} taken (another instance is HTTP-primary); stdio-only mode\n`)
+  } else {
+    throw e
+  }
+}
 
 // ── Web UI HTML ──
 
