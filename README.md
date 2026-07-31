@@ -1,5 +1,7 @@
 # Codex Bridge
 
+[![Mentioned in Awesome Codex CLI](https://awesome.re/mentioned-badge.svg)](https://github.com/RoggeOhta/awesome-codex-cli)
+
 ### Make Claude Code and OpenAI Codex talk to each other.
 
 Uses [Claude Code Channels](https://code.claude.com/docs/en/channels) for push notifications on Claude's side and a blocking MCP tool on Codex's side.
