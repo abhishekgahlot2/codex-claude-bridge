@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/abhishekgahlot2-codex-claude-bridge-badge.png)](https://mseep.ai/app/abhishekgahlot2-codex-claude-bridge)
+
 # Codex Bridge
 
 [![Mentioned in Awesome Codex CLI](https://awesome.re/mentioned-badge.svg)](https://github.com/RoggeOhta/awesome-codex-cli)
