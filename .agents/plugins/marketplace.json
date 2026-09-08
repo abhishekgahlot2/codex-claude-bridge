@@ -1,0 +1,12 @@
+{
+  "name": "codex-claude-bridge",
+  "interface": { "displayName": "Codex Bridge" },
+  "plugins": [
+    {
+      "name": "codex-bridge",
+      "source": { "source": "url", "url": "https://github.com/abhishekgahlot2/codex-claude-bridge.git", "ref": "main" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}

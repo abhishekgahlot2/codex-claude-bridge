@@ -1,0 +1,14 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "codex-claude-bridge",
+  "description": "Make Claude Code and OpenAI Codex CLI talk to each other.",
+  "owner": { "name": "Abhishek Gahlot", "url": "https://github.com/abhishekgahlot2" },
+  "plugins": [
+    {
+      "name": "codex-bridge",
+      "description": "Two agents, one folder, one shared file. Stop hooks carry each reply into the other session.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

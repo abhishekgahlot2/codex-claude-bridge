@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="650" viewBox="0 0 800 650" role="img" aria-labelledby="architecture-title architecture-desc">
   <title id="architecture-title">Two terminals. One shared file.</title>
-  <desc id="architecture-desc">Claude Code and Codex CLI each run bridge.ts as a Stop hook. When a turn ends, the hook appends the final message to ~/.codex-bridge/chat.md under a timestamped agent header, then waits on fs.watch. A new peer block wakes the waiting hook, which prints a block decision whose reason includes the peer message. The host injects that reason as the next prompt. No server or MCP is involved.</desc>
+  <desc id="architecture-desc">Claude Code and Codex CLI each run bridge.ts as a Stop hook. When a turn ends, the hook appends the final message to ./.codex-bridge/chat.md under a timestamped agent header, then waits on fs.watch. A new peer block wakes the waiting hook, which prints a block decision whose reason includes the peer message. The host injects that reason as the next prompt. No server or MCP is involved.</desc>
   <style>
     .heading{fill:#183127;font-family:"IBM Plex Sans Condensed","IBM Plex Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;font-size:22px;font-weight:600;letter-spacing:-.22px}
     .label{fill:#183127;font-family:"IBM Plex Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;font-size:19px;font-weight:600}
@@ -58,14 +58,14 @@
 
   <rect x="28" y="330" width="208" height="144" rx="10" class="box"/>
   <text x="44" y="358" class="label">Stop hook</text>
-  <text x="44" y="381" class="mono">bridge.ts claude</text>
+  <text x="44" y="381" class="mono">bridge.mjs hook</text>
   <text x="44" y="409" class="small">append reply</text>
   <path d="M44 424 H220" class="line"/>
   <text x="44" y="450" class="small">wait for codex</text>
 
   <rect x="564" y="330" width="208" height="144" rx="10" class="box"/>
   <text x="580" y="358" class="label">Stop hook</text>
-  <text x="580" y="381" class="mono">bridge.ts codex</text>
+  <text x="580" y="381" class="mono">bridge.mjs hook</text>
   <text x="580" y="409" class="small">append reply</text>
   <path d="M580 424 H756" class="line"/>
   <text x="580" y="450" class="small">wait for claude</text>
@@ -73,7 +73,7 @@
   <text x="284" y="170" class="caption">APPEND-ONLY</text>
   <rect x="284" y="194" width="232" height="280" rx="10" class="green"/>
   <text x="304" y="228" class="label">chat.md</text>
-  <text x="304" y="253" class="mono">~/.codex-bridge/</text>
+  <text x="304" y="253" class="mono">./.codex-bridge/</text>
   <path d="M304 273 H496" class="line"/>
   <text x="304" y="310" class="mono">## claude @ &lt;ISO time&gt;</text>
   <text x="304" y="336" class="small">Claude’s final reply</text>
@@ -88,5 +88,5 @@
   <text x="44" y="575" class="text">Hook stdout → reason becomes the next prompt</text>
   <text x="44" y="601" class="mono">{"decision":"block","reason":"&lt;peer message&gt;"}</text>
   <text x="26" y="636" class="number">CODEX BRIDGE · v0.2</text>
-  <text x="774" y="636" class="number" text-anchor="end">NO SERVER · NO MCP</text>
+  <text x="774" y="636" class="number" text-anchor="end">NO SERVER · SAME FOLDER</text>
 </svg>
