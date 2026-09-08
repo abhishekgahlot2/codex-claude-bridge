@@ -1,7 +1,7 @@
 {
   "name": "codex-bridge",
-  "version": "0.3.1",
-  "description": "Let Claude Code and OpenAI Codex CLI talk to each other in the same folder through one shared file and two hooks. No server.",
+  "version": "0.2.0",
+  "description": "Let Claude Code and Codex CLI sessions in the same folder talk to each other through one markdown file. No server.",
   "author": {
     "name": "Abhishek Gahlot",
     "url": "https://github.com/abhishekgahlot2"
@@ -15,5 +15,14 @@
     "bridge",
     "agent-to-agent",
     "hooks"
-  ]
+  ],
+  "mcpServers": {
+    "codex-bridge": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/bridge.mjs",
+        "channel"
+      ]
+    }
+  }
 }
