@@ -2,30 +2,19 @@
 
 [![Mentioned in Awesome Codex CLI](https://awesome.re/mentioned-badge.svg)](https://github.com/RoggeOhta/awesome-codex-cli)
 
-### Let Claude Code and OpenAI Codex CLI talk to each other. Same folder, one file, no server.
+### Your live Claude Code and Codex CLI sessions talk to each other. One folder, one markdown file, no server.
 
-Run `claude` in one terminal and `codex` in another, in the same folder. Two hooks on each side carry every reply into the other session. You watch the file and can interject.
+You run `claude` in one pane and `codex` in another, in the same folder, each with its own context (say, frontend and backend). Tell either one to discuss something with the other. They exchange messages through `.codex-bridge/chat.md` and both panes show the conversation.
 
-<p align="center"><img src="docs/architecture.svg" alt="Two terminals, one shared file: each side's Stop hook appends its reply to chat.md, waits for the other side's block, and injects it as the next prompt" width="800"></p>
+<p align="center"><img src="docs/screenshot.png" alt="Live: Codex (right) opens with @claude and waits in its Stop hook; Claude (left) receives the message through the channel and answers with a comparison table" width="900"></p>
 
-## How it works
-
-The bridge lives in `./.codex-bridge/chat.md` of the folder both agents run in. Sessions in other folders never see it, and inside the folder only the first Claude and the first Codex session after the bridge opens take part.
-
-Claude Code and Codex CLI share the same hook contract, so one `bridge.mjs` serves both:
-
-1. **UserPromptSubmit**: while the bridge is open, every prompt gets one line of context: you are talking to the other agent, do not call any tool to send messages, your reply is delivered automatically.
-2. **Stop**: when a turn ends, the hook appends the agent's final message as a block, waits (`fs.watch`) until a block from the other side lands, and prints `{"decision":"block","reason":"<that message>"}`. The agent does not stop; the message is its next prompt. It replies, its Stop hook fires, repeat.
-
-A reply that starts or ends with `[WAITING]` is not sent, so an agent can listen without saying anything. One that starts or ends with `[DONE]` ends the exchange. Markers in the middle of a sentence are ignored. Conversations are capped at 40 messages.
-
-<p align="center"><img src="docs/turn-loop.svg" alt="Turn sequence: Claude's turn ends, its hook appends a block, Codex's waiting hook wakes and prints the block decision, Codex replies, its hook appends, Claude's hook wakes" width="800"></p>
+<p align="center"><img src="docs/architecture.svg" alt="Two terminals, one shared file: each side's Stop hook appends its reply to chat.md; Claude's channel and Codex's waiting hook deliver the other side's message as the next prompt" width="800"></p>
 
 ## Install
 
-The hooks run one small Node.js script, so `node` (20 or newer) must be on the PATH of a non-interactive shell.
+Needs `node` on the PATH of a non-interactive shell.
 
-### Claude Code
+**Claude Code**
 
 ```
 /plugin marketplace add abhishekgahlot2/codex-claude-bridge
@@ -34,100 +23,108 @@ The hooks run one small Node.js script, so `node` (20 or newer) must be on the P
 /plugin install codex-bridge@codex-claude-bridge
 ```
 
-Send them as two separate prompts.
+Then launch Claude with the channel enabled (Channels are a research preview; the flag is required):
 
-### Codex
+```bash
+claude --dangerously-load-development-channels plugin:codex-bridge@codex-claude-bridge
+```
+
+**Codex CLI**
 
 ```bash
 codex plugin marketplace add abhishekgahlot2/codex-claude-bridge
 codex plugin add codex-bridge@codex-claude-bridge
 ```
 
-Run `codex`, open `/hooks`, trust its two hooks, and start a new thread. Codex will not run a hook until you do.
-
-### Without the plugin
-
-Clone the repo and copy the two entries from `hooks/hooks.json` into `~/.claude/settings.json` and `~/.codex/hooks.json`, replacing `${CLAUDE_PLUGIN_ROOT}` with the clone path. Nothing happens in folders without a `.codex-bridge/chat.md`.
+Run `codex`, open `/hooks`, trust its two hooks.
 
 ## Use
 
-Everything below happens in one folder.
+In the Codex pane:
 
-1. **Open the bridge.** In Claude: `/codex-bridge:start`. Or from any shell:
+```
+discuss with claude bridge: redis vs memcached, keep going until you agree
+```
 
-   ```bash
-   mkdir -p .codex-bridge && touch .codex-bridge/chat.md
-   ```
+Codex opens with `@claude ...`, then shows "Running hooks" while it waits. Claude's pane shows `← codex-bridge: ...` and its answer, Codex wakes with that answer, and they alternate until one ends a message with `[DONE]`. Claude's pane stays free the whole time.
 
-   The folder is gitignored automatically.
+From the Claude pane it is the same with `discuss with codex bridge: ...`, plus one keypress: type anything in the Codex pane once (nothing can push into an idle Codex) and it picks up Claude's message.
 
-2. **Codex, same folder.** Give it:
+Watch the transcript from anywhere:
 
-   ```
-   Reply with just [WAITING].
-   ```
+```bash
+tail -f .codex-bridge/chat.md
+```
 
-   Its prompt line goes busy. That is the hook listening.
+## How it works
 
-3. **Claude.** Give it the topic:
+`bridge.mjs` does three jobs, all on the folder's `.codex-bridge/chat.md`:
 
-   ```
-   Discuss whether we should use Redis or Memcached for caching with Codex. Keep going until you agree, then end your reply with [DONE].
-   ```
+1. **Prompt hook** (both tools). When a prompt mentions "claude bridge" or "codex bridge", or a bridge is open here, it tells the agent: start your reply with `@claude` / `@codex`, use no tool, `[DONE]` ends it.
+2. **Stop hook** (both tools). Appends the agent's final reply. A reply starting with `@claude` or `@codex` opens the bridge (or reopens it after `[DONE]`). Then, on Codex, it watches the file (`fs.watch`) until Claude's block lands and returns `{"decision":"block","reason":"<that message>"}`, which becomes Codex's next prompt. On Claude it returns at once, because:
+3. **Channel** (Claude only). A dependency-free MCP server the plugin starts inside Claude Code. It watches the file and pushes each new block into the live session, so Claude receives messages while idle. Without the launch flag it stays silent and Claude's Stop hook falls back to waiting like Codex.
 
-4. **Watch and interject** from a third shell:
-
-   ```bash
-   tail -f .codex-bridge/chat.md
-   printf '## user @ %s\n%s\n\n' "$(date -u +%FT%T.000Z)" "Cost matters more than latency." >> .codex-bridge/chat.md
-   ```
-
-5. **Close.** In Claude: `/codex-bridge:stop`. Or `rm -r .codex-bridge`.
+Each side keeps a cursor in `.codex-bridge/<side>.json`, so nothing is dropped while an agent is mid-turn and nothing is shown twice. Conversations cap at 40 messages. The folder is gitignored automatically.
 
 ## File format
 
 ```
-## claude @ 2026-09-08T10:15:02.113Z
-Redis or Memcached?
+## codex @ 2026-09-08T14:15:01.957Z
+Let's compare Redis and Memcached.
 
-## codex @ 2026-09-08T10:15:41.902Z
-Redis. It has persistence and we already run it. [DONE]
+## claude @ 2026-09-08T14:16:30.079Z
+Redis by default. [DONE]
 ```
 
 | Marker | Meaning |
 |--------|---------|
-| `## <claude\|codex\|user\|bridge> @ <ISO-8601 UTC>` | Start of a message block. `user` is you, `bridge` is the cap notice. |
+| `## <claude\|codex\|user\|bridge> @ <ISO-8601 UTC>` | Start of a message. `user` is you (`node bridge.mjs say "..."`), `bridge` is the cap notice. |
+| `@claude` / `@codex` at the start of a reply | Open the bridge with this message. |
 | `[WAITING]` at the start or end of a reply | Do not send this reply. Listen only. |
 | `[DONE]` at the start or end of a reply | End the conversation after this reply. |
 
-Delivered messages look like `New message via codex-bridge:` followed by `[codex] ...` or `[user] ...`. Each side keeps `.codex-bridge/<side>.json` with the session it is bound to and how many blocks it has been shown, so nothing is dropped while an agent is mid-turn and nothing is shown twice.
-
-## How real-time is it
-
-The waiting hook wakes on `fs.watch`, so a reply is injected within milliseconds of being written. A 2s tick covers a missed event. The model's own turn time dominates. Each side waits up to 570s for a reply under a 600s hook timeout; if the other side stays silent longer, the agent stops with a `codex-bridge: no reply` note and you prompt it again.
-
 ## Limitations
 
-- While a side is waiting, that terminal is inside a hook and you cannot type there. Esc or Ctrl-C abandons the wait. See below for why there is no push into Codex yet.
-- Start the listener with `[WAITING]` before the initiator speaks. If the listener greets with words after the initiator already spoke, the initiator gets that greeting as one extra turn.
-- Both agents must run on the same machine and in the same folder.
-- Anything appended to `chat.md` becomes a prompt for both agents. Any local process that can write the file can steer them.
+- Codex's pane is busy while it waits inside its Stop hook (up to 570s per reply). Esc abandons the wait. Typing into Codex during the wait interrupts it.
+- Only the final message of a turn is sent. Drafts an agent writes mid-turn are not.
+- Both agents must run in the same folder on the same machine.
+- Anything appended to `chat.md` becomes a prompt for both agents.
+- Claude needs the development-channels flag until custom channels leave preview.
 
-## Why the waiting side blocks
+## This vs v0.1
 
-The only way to wake an idle Codex session from outside is `codex queue --thread <name> --message ...`, added in Codex 0.149. It delivers through the local app-server daemon, and that daemon starts only from the standalone Codex install; with the npm install the socket never exists and `codex queue` hangs. Claude Code's equivalent is Channels, which needs an MCP process and a preview flag. Until both push paths are dependable, a hook that waits is the honest design: it works in both directions with nothing else running.
+v0.1 was a blocking Codex MCP tool, a Claude channel, and an HTTP server with a web UI.
 
-## Versions
+**Better now**
+- No server, no port, no web UI. The markdown file is the transcript; `tail -f` is the viewer.
+- Folder-scoped. Other projects and sessions are untouched.
+- Nothing for the model to remember. The Stop hook captures the reply; v0.1 lost replies when Claude omitted `reply_to`.
+- Claude → Codex works with one keypress. v0.1 queued it until Codex happened to poll.
+- A cursor per side: nothing dropped while an agent is mid-turn, nothing shown twice.
+- 570s per turn. v0.1 gave Codex 110s.
 
-- v0.3: this. Node, folder-scoped, plugin install for both tools, prompt-time context.
-- [v0.2.0](https://github.com/abhishekgahlot2/codex-claude-bridge/releases/tag/v0.2.0): first file + Stop-hook design, Bun, chat in the home directory.
-- [v0.1.0](https://github.com/abhishekgahlot2/codex-claude-bridge/releases/tag/v0.1.0): Claude Channels + a blocking Codex MCP tool + a local web server. One-directional in practice.
+**Worse now**
+- Codex's pane is busy while it waits inside its Stop hook. In v0.1 the wait was an MCP tool call.
+- Two hooks to trust in Codex, and per-folder config without the plugins. v0.1 was one global config.
+- Everything either agent says while the bridge is open is sent. v0.1 sent only what Codex passed to the tool.
+- Typing into Codex mid-wait interrupts the wait.
+- Only the final message of a turn is sent.
+
+**Same in both:** Claude needs the channels launch flag, and an idle Codex cannot be pushed.
+
+## Without the plugins
+
+Clone the repo. Put the two hooks from `hooks/hooks.json` into `<folder>/.claude/settings.local.json` and `<folder>/.codex/hooks.json` with the clone path in place of `${CLAUDE_PLUGIN_ROOT}`, and launch Claude with `--dangerously-load-development-channels server:codex-bridge --mcp-config <a file declaring the codex-bridge server: node <clone>/bridge.mjs channel>`.
 
 ## Tests
 
 ```bash
 node --test
 ```
+
+## Earlier design
+
+[v0.1.0](https://github.com/abhishekgahlot2/codex-claude-bridge/releases/tag/v0.1.0) used a blocking Codex MCP tool, a local HTTP server, and a web UI. One-directional in practice.
 
 ## License
 
