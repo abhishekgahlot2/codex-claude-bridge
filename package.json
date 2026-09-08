@@ -1,9 +1,11 @@
 {
   "name": "codex-claude-bridge",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "license": "MIT",
   "type": "module",
-  "bin": { "codex-bridge": "./bridge.mjs" },
+  "bin": {
+    "codex-bridge": "./bridge.mjs"
+  },
   "scripts": {
     "test": "node --test"
   }

@@ -1,11 +1,19 @@
 {
   "name": "codex-bridge",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Let Claude Code and OpenAI Codex CLI talk to each other in the same folder through one shared file and two hooks. No server.",
-  "author": { "name": "Abhishek Gahlot", "url": "https://github.com/abhishekgahlot2" },
+  "author": {
+    "name": "Abhishek Gahlot",
+    "url": "https://github.com/abhishekgahlot2"
+  },
   "homepage": "https://github.com/abhishekgahlot2/codex-claude-bridge",
   "repository": "https://github.com/abhishekgahlot2/codex-claude-bridge",
   "license": "MIT",
-  "keywords": ["codex", "claude", "bridge", "agent-to-agent", "hooks"],
-  "hooks": "./hooks/hooks.json"
+  "keywords": [
+    "codex",
+    "claude",
+    "bridge",
+    "agent-to-agent",
+    "hooks"
+  ]
 }
