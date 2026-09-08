@@ -1,6 +1,6 @@
 {
   "name": "codex-bridge",
-  "description": "Bidirectional bridge between Claude Code and OpenAI Codex CLI. Two AI agents, one conversation.",
-  "version": "0.1.0",
-  "keywords": ["codex", "claude", "bridge", "agent-to-agent", "channel", "mcp"]
+  "description": "Let Claude Code and OpenAI Codex CLI talk to each other through one shared file, driven by Stop hooks on both sides. No server.",
+  "version": "0.2.0",
+  "keywords": ["codex", "claude", "bridge", "agent-to-agent", "hooks"]
 }
