@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="650" viewBox="0 0 800 650" role="img" aria-labelledby="architecture-title architecture-desc">
+  <title id="architecture-title">Two terminals. One shared file.</title>
+  <desc id="architecture-desc">Claude Code and Codex CLI each run bridge.ts as a Stop hook. When a turn ends, the hook appends the final message to ~/.codex-bridge/chat.md under a timestamped agent header, then waits on fs.watch. A new peer block wakes the waiting hook, which prints a block decision whose reason includes the peer message. The host injects that reason as the next prompt. No server or MCP is involved.</desc>
+  <style>
+    .heading{fill:#183127;font-family:"IBM Plex Sans Condensed","IBM Plex Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;font-size:22px;font-weight:600;letter-spacing:-.22px}
+    .label{fill:#183127;font-family:"IBM Plex Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;font-size:19px;font-weight:600}
+    .text{fill:#183127;font-family:"IBM Plex Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;font-size:17px}
+    .small{fill:#5b7164;font-family:"IBM Plex Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;font-size:14px}
+    .mono{fill:#5b7164;font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px}
+    .caption{fill:#5b7164;font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;letter-spacing:1px}
+    .number{fill:#5b7164;font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:500;letter-spacing:.88px}
+    .box{fill:#fff;stroke:#c9d6ce;stroke-width:1.5}
+    .soft{fill:#edf3ef;stroke:#c9d6ce;stroke-width:1.5}
+    .green{fill:#ddefe3;stroke:#287856;stroke-width:1.5}
+    .line{fill:none;stroke:#c9d6ce;stroke-width:1.5}
+    .wire{fill:none;stroke:#83988a;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+    .dashed{stroke-dasharray:5 6}
+    .terminal{fill:#15251e;stroke:#496254;stroke-width:1.5}
+    .terminal-text{fill:#dcebe1;font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:16px}
+    .terminal-muted{fill:#97b5a3;font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px}
+  </style>
+  <defs>
+    <pattern id="architecture-dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r=".8" fill="#d4dfd7"/></pattern>
+  </defs>
+  <rect x=".75" y=".75" width="798.5" height="648.5" rx="9" fill="#f8faf8" stroke="#c9d6ce" stroke-width="1.5"/>
+  <rect x="12" y="88" width="776" height="450" fill="url(#architecture-dots)"/>
+  <text x="26" y="45" class="heading">Two terminals. One shared file.</text>
+  <text x="774" y="43" class="number" text-anchor="end">FIG. 01</text>
+  <text x="26" y="74" class="small">Stop hooks carry each reply into the other session.</text>
+
+  <!-- Connectors sit behind the nodes. Solid: append or inject. Dashed: wake. -->
+  <g class="wire">
+    <path d="M132 278 V321 M127 314 L132 321 L137 314"/>
+    <path d="M668 278 V321 M663 314 L668 321 L673 314"/>
+    <path d="M240 398 H276 M269 393 L276 398 L269 403"/>
+    <path d="M560 398 H524 M531 393 L524 398 L531 403"/>
+    <path d="M132 480 V491 H14 V230 H22 M15 225 L22 230 L15 235"/>
+    <path d="M668 480 V491 H786 V230 H778 M785 225 L778 230 L785 235"/>
+  </g>
+  <path d="M278 444 H242 M522 444 H558" class="wire dashed"/>
+  <path d="M249 439 L242 444 L249 449 M551 439 L558 444 L551 449" class="wire"/>
+
+  <text x="28" y="113" class="caption">TERMINAL 01</text>
+  <rect x="28" y="132" width="208" height="140" rx="12" class="terminal"/>
+  <circle cx="48" cy="152" r="4" fill="#c68868"/><circle cx="66" cy="152" r="4" fill="#d8be75"/><circle cx="84" cy="152" r="4" fill="#79a287"/>
+  <text x="44" y="186" class="terminal-text">Claude Code</text>
+  <text x="44" y="220" class="terminal-text">final message</text>
+  <text x="44" y="249" class="terminal-muted">normal session</text>
+  <text x="146" y="307" class="small">turn ends</text>
+
+  <text x="564" y="113" class="caption">TERMINAL 02</text>
+  <rect x="564" y="132" width="208" height="140" rx="12" class="terminal"/>
+  <circle cx="584" cy="152" r="4" fill="#c68868"/><circle cx="602" cy="152" r="4" fill="#d8be75"/><circle cx="620" cy="152" r="4" fill="#79a287"/>
+  <text x="580" y="186" class="terminal-text">Codex CLI</text>
+  <text x="580" y="220" class="terminal-text">final message</text>
+  <text x="580" y="249" class="terminal-muted">normal session</text>
+  <text x="682" y="307" class="small">turn ends</text>
+
+  <rect x="28" y="330" width="208" height="144" rx="10" class="box"/>
+  <text x="44" y="358" class="label">Stop hook</text>
+  <text x="44" y="381" class="mono">bridge.ts claude</text>
+  <text x="44" y="409" class="small">append reply</text>
+  <path d="M44 424 H220" class="line"/>
+  <text x="44" y="450" class="small">wait for codex</text>
+
+  <rect x="564" y="330" width="208" height="144" rx="10" class="box"/>
+  <text x="580" y="358" class="label">Stop hook</text>
+  <text x="580" y="381" class="mono">bridge.ts codex</text>
+  <text x="580" y="409" class="small">append reply</text>
+  <path d="M580 424 H756" class="line"/>
+  <text x="580" y="450" class="small">wait for claude</text>
+
+  <text x="284" y="170" class="caption">APPEND-ONLY</text>
+  <rect x="284" y="194" width="232" height="280" rx="10" class="green"/>
+  <text x="304" y="228" class="label">chat.md</text>
+  <text x="304" y="253" class="mono">~/.codex-bridge/</text>
+  <path d="M304 273 H496" class="line"/>
+  <text x="304" y="310" class="mono">## claude @ &lt;ISO time&gt;</text>
+  <text x="304" y="336" class="small">Claude’s final reply</text>
+  <text x="304" y="376" class="mono">## codex @ &lt;ISO time&gt;</text>
+  <text x="304" y="402" class="small">Codex’s final reply</text>
+  <path d="M304 422 H496" class="line"/>
+  <text x="400" y="451" class="mono" text-anchor="middle">fs.watch</text>
+
+  <text x="40" y="512" class="small">inject next prompt</text>
+  <text x="584" y="512" class="small">inject next prompt</text>
+  <rect x="28" y="548" width="744" height="72" rx="10" class="soft"/>
+  <text x="44" y="575" class="text">Hook stdout → reason becomes the next prompt</text>
+  <text x="44" y="601" class="mono">{"decision":"block","reason":"&lt;peer message&gt;"}</text>
+  <text x="26" y="636" class="number">CODEX BRIDGE · v0.2</text>
+  <text x="774" y="636" class="number" text-anchor="end">NO SERVER · NO MCP</text>
+</svg>
