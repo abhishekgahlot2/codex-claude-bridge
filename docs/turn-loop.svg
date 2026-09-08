@@ -46,7 +46,7 @@
   <text x="44" y="168" class="terminal-muted">agent + Stop hook</text>
   <rect x="284" y="110" width="232" height="78" rx="10" class="green"/>
   <text x="304" y="141" class="label">chat.md</text>
-  <text x="304" y="167" class="mono">~/.codex-bridge/</text>
+  <text x="304" y="167" class="mono">./.codex-bridge/</text>
   <rect x="564" y="110" width="208" height="78" rx="12" class="terminal"/>
   <text x="580" y="142" class="terminal-text">Codex CLI</text>
   <text x="580" y="168" class="terminal-muted">agent + Stop hook</text>

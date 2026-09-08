@@ -1,11 +1,22 @@
 {
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bridge.mjs\" hook",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/bridge.ts\" claude",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bridge.mjs\" hook",
             "timeout": 600
           }
         ]
